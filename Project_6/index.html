@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<meta charset='utf-8'>
+<head>
+  <script src="http://d3js.org/d3.v3.min.js"></script>
+  <script src="http://d3js.org/queue.v1.min.js"></script>
+  <script src="js/line_chart_modules.js"></script>
+  <script src="js/utilities.js"></script>
+  <script src="js/line_chart.js"></script>
+  <script src="js/map.js"></script>
+  <link rel="stylesheet", href="css/index.css" type="text/css">
+  <title>Climate Change And Heat Waves</title>
+</head>
+<body>
+  <section id="intro">
+    <div id="introTitle" class = "narrow">
+      Summer Heat Waves In The US:<br>Three Decades of Data
+    </div>
+    <div id="introText", class="mid">
+      <p>As the earth continues to warm, what effects are we likely to
+    see at the extremes of temperature?  If the rise in
+    the Earth's average temperature causes a comparable increase in
+    our typical daily temperature range, the effect would be fairly modest.
+    On the other hand, if we see more prolonged spells
+    of abnormally high temperature - heat waves - there can be profound
+    effects on society and human health: deaths from hyperthermia,
+    severe crop failures, power outages from excessive air conditioning
+    use, etc.
+      </p>
+      <p>In 2015 the U.S. Centers for Disease Control and Prevention
+    (“CDC”) released an analysis of what they called “heat wave days”
+    in the U.S. for the years 1980-2010.  Heat wave days were defined as
+    2 or more days in succession when the maximum air temperature
+    (or a calculated heat stress index) exceeded the 95th percentile for that
+    date in that county.  What these data show is that there has already
+    been a major increase in the frequency of abnormally hot summer days in
+    the US during an interval in which the increase in global mean temperature
+    is quite modest. A secondary message is that climate changes on a short
+    scale can make it difficult to see the longer term trends, and that the
+    effects of climate change differ significantly across geographic regions.
+      </p>
+    </div>
+    <div id="nextAnchor"><a href="#graphs">Next<br>﹀</a></div>
+  </section>
+
+  <section id="graphs">
+    <div id="graphContainer">
+      <svg id="lineChartCanvas"></svg>
+    </div>
+    <div id="controlsContainer">
+      <div id="graphButtons">
+        <div id="buttonGroup">
+          <ul id="buttonList">
+            <li><a href="#" id="b1" class="graphButton">
+              Global Temperature<br>Change</a></li>
+            <li><a href="#" id="b2" class="graphButton">
+              Earth's Mean<br>Temperature</a></li>
+            <li><a href="#" id="b3" class="graphButton">
+              Yearly Average<br>Heatwave Days</a></li>
+            <li><a href="#" id="b4" class="graphButton">
+              Five-Yr Average<br>Heatwave Days</a></li>
+          </ul>
+        </div>
+        <div id="buttonInfo">
+            Click to show / hide selected chart
+        </div>
+      </div>
+      <div id=graphCaption>
+        <p id=captionTitle></p>
+        <p id=captionText></p>
+      </div>
+    </div>
+  </section>
+  <div id="mapAnchor"><a href="#map">Map<br>﹀<br></a></div>
+  <section id="map">
+    <div id="mapContainer">
+    </div>
+  </section>
+  <script>
+  // load the data and set up line chart and map
+    "use strict;"
+    queue()
+      .defer(d3.csv, "data/land_sea_temp_anomaly.csv")
+      .defer(d3.csv, "data/yearly_average_heat_wave_days.csv")
+      .await(setupLineCharts);
+    queue()
+      .defer(d3.json, "data/us_counties_L48.geojson")
+      .defer(d3.json, "data/five_yr_avg.json")
+      .defer(d3.json, "data/color_map.json")
+      .await(setup_map);
+  </script>
+</body>
+</html>
