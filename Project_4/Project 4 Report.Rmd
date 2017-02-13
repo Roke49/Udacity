@@ -1,0 +1,359 @@
+Vinho Verde Wines: Quality Ratings
+By: Robert Whitson, MD
+========================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using
+# in your analysis in this code chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk.
+# This prevents the code from displaying in the knitted HTML output.
+# You should set echo=FALSE for all code chunks in your file.
+setwd("~/Udacity/Udacity Nanodegree/Project 4")
+library(ggplot2)
+library(GGally)
+library (gridExtra)
+library(tidyr)
+library(dplyr)
+library(memisc)
+```
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+wines<-read.csv("wineQualityWhites.csv")
+```
+
+# What Does the Dataset Look Like?
+
+This dataset has "overall quality" ratings for almost 5,000 wines of the Portugese Vinho Verde type, with 11 objective physicochemical measurements for each wine.  The sole output variable is thus the quality rating, and the dataset should provide the raw material to build a predictive model for subjective quality based on the objective data.  Since these wines are quite variable in terms of grape varietal and style (sweet, dry, sparkling, etc.), it may be possible to identify subgroups within the larger dataset based on the objective parameters.
+
+Look first at a bar chart of the distribution of the overall quality ratings.  Bar chart more appropriate than histogram since only 6 quality levels actually occur in the dataset.  Show structure of data frame and first 10 rows.
+
+```{r echo=FALSE, Univariate_Plots}
+ ggplot(data = wines, aes(x = quality)) +
+  geom_bar() + xlab("Experts' Quality Rating") +
+  ylab("Number of Wines") + 
+  scale_x_continuous(breaks=seq(0,10,1), limits=c(0,10))+
+  ggtitle("Distribution of Wine Quality Ratings")
+str(wines)
+table(wines$quality)
+head(wines,10)
+
+```
+
+# Distribution of wine quality ratings:
+Asymmetry. Mean and median above midpoint of scale. ? from actual distribution or psychology of using rating scales like this. No details about scale, only: 0 = "very bad", 10 = "very excellent", and each rating a median of at least 3 ratings by expert.
+
+# Univariate Analysis
+Vinho verde = young wines, drink right after production. Style variable, usually lightly carbonated (wiki article).  Resid sugar could show different styles.  Clear peak near lower end, long tail towards high end with one outlier.
+
+```{r}
+# Plot histogram of residual sugar, round to nearest 0.5 gm 
+# to smooth, eliminate top 1% from plot.
+ggplot(data=wines, aes(x = round(residual.sugar / 0.5) * 0.5)) +
+  geom_histogram(binwidth = 0.5) + 
+  scale_x_continuous(limits=c(0, quantile(wines$residual.sugar, probs=0.99)),
+                     breaks=seq(0,20,1)) +
+  xlab("Residual Sugar (gm/L)") + ylab("Number of Wines") +
+  ggtitle("Residual Sugar Distribution")
+print("Number of wines with residual sugar over 20:")
+nrow(wines[wines$residual.sugar>20,])
+```
+
+After smoothing and limiting as above, distribution shows: peak at 1.5 gm/L, long-tailed.  Suggestion of secondary peak around 6 and again around 12. May be useful to create subgroups for analysis breaking at 3.5 and 9.5 gm/L.  Interesting to note: In classification of sparkling wines, "Extra Brut", the driest, has up to 3 gm/L of sugar, and dry still wines have RS up to about 10. Very long tail on this plot confirms that these wines are made in very different styles, from very dry to moderately sweet.
+
+# Other measured attributes
+Look at histograms of all physio-chemical parameters to see if distributions seem unusual in any way. Create plots of each then use grid.arrange to see overview. 
+
+```{r}
+l_plots <- list()
+i <- 1
+# columns 2-12 of data frame are the physiochemical properties measured in the
+# analysis.
+for (attrib in colnames(wines)[2:12]){
+  l_plots[[i]] <- ggplot(wines, aes_string(x = attrib)) +
+    geom_histogram()
+  i <- i + 1
+}
+do.call("grid.arrange", c(l_plots, ncol=3))
+
+```
+
+I get the impression looking at these that the distributions for most of the measured physiochemical attributes are "normal-ish", except residual sugar, alcohol, density, and sulphates.  Look closer at alcohol distribution.  Looks like perhaps bi- or tri-modal distribution.  Smooth a bit?
+So smoothing with the round() function makes it look like a mode of 9.5 then gradually declining to max of 14 with no secondary peak.  One could also split wines according to alcohol level and look at other measures to see if different, but no clear cut points suggested from plot. Just use quantiles?
+
+```{r}
+ggplot(wines, aes(x=round(alcohol / 0.5) * 0.5)) +
+  geom_histogram(binwidth = 0.5) + xlab ("Alcohol Volume Percent") +
+  ylab ("Number of Wines") + ggtitle("Alcohol Percent Distribution") +
+  scale_x_continuous(limits=c(8,14), breaks=seq(8,14,0.5))
+
+```
+
+Take closer look at some of the individual attributes with better scaling.  Fixed acidity first:
+
+```{r}
+ggplot(data = wines[wines$fixed.acidity < 
+                      quantile(wines$fixed.acidity, 0.99),], aes(fixed.acidity)) + 
+  geom_histogram(binwidth=0.1)
+```
+Which looks pretty normal-ish.  May be useful to examine later with respect to residual sugar, as article about residual sugar suggests sweeter wines taste better when balanced by more acidity.  
+
+"Density" (actually specific gravity):
+```{r}
+ggplot (wines, aes(density)) + geom_histogram() +
+  xlim(0.985, 1.005)
+```
+This looks somewaht skewed to the right, consistent with the effect of residual sugar on specific gravity.  Increased sugar level should increase the SG of the wine, and there's a long right-tail on the residual sugar histogram, which could pull the density distribution to the right as well.
+
+Sulphates: (would probably be called "sulfites" in US wine parlance. Sometimes added to wine to prevent spoilage.)
+```{r}
+
+ggplot(wines, aes(sulphates)) + 
+  geom_histogram(binwidth=.02)
+```
+This also looks like a normal distribution, but long-tailed to the right.  The documentation states this is a wine additive which contributes to SO2 levels, acting as an antimicrobial agent.  Why the tail to the right? Look at shape of histogram limiting data to wines with higher RS and/or alcohol:
+
+```{r}
+
+ggplot(wines[wines$alcohol < 9.5,], aes(sulphates)) +
+  geom_histogram(binwidth=.02)
+```
+Shape looks the same at different alcohol and RS levels.  May be interesting to look at alcohol, RS, and quality ratings of wines with the higher sulphite ("sulphate") levels.
+
+
+# Summary univariate analysis:
+
+Quality ratings asymmetric: median and mean above midpoint of scale. No wines at lowest (0,1,2) or highest (10) scores. Shape of distribution looks asymmetric around the median also.  
+
+Residual sugar and alcohol measurements appear long-tailed to the right.  Consistent with these features being selected and manipulated explicitly in the wine-making process.  Splitting wines on these measures to look at other parameters could be interesting. 
+
+
+# Bivariate Plots Section
+
+As a first step, use ggpairs to look at rough scatterplots and correlation coefficients among all variables.
+
+```{r echo=FALSE}
+# sample 1000 rows, don't include first column which is integer index
+ggpairs(wines[sample.int(nrow(wines), 1000), 2:13], axisLabels="internal")
+```
+
+
+Impressions: For quality, the only moderate correlation per Pearson's r is positive with alcohol.  Weak (negative) with density - could be d/t alcohol, (negative) chlorides - salty wines not good, (negative) with volatile acid - vinegary wines not good.  Scatterplots show strong correlation density with (+) sugar and (-) alcohol - as expected from basic chemistry.  pH correlated with fixed acidity (also basic chemistry).  Might be interesting to look at density modeled on sugar and alcohol and see how much residual there is.  So for a linear model, only alcohol seems like it might be a predictor for quality rating.
+
+
+Article on residual sugar suggests that higher sugar wines need to be balanced by more acidity for good taste, so examine scatter plot of these colored by quality to see if there is a pattern.
+```{r echo=FALSE, Bivariate_Plots}
+ggplot(wines, aes(residual.sugar, fixed.acidity)) +
+  geom_point(aes(color=as.factor(quality))) + 
+  xlim(0,20)
+```
+Has an interesting shape to it.  Lots of overplotting. Can't see a pattern regarding quality. Looks like different group at sugar less than 3.  Look at that region and color by quality.
+
+```{r}
+ggplot(wines, aes(residual.sugar, fixed.acidity)) +
+  geom_point(aes(color=as.factor(quality))) + 
+  xlim(0.5,3)
+```
+Can't see much in that 
+Make buckets for quality, low (<6), mid (=6), high ( > 6). May be able to see some patterns more easily.
+
+```{r}
+wines$quality.group <- cut(wines$quality,
+                                breaks = c(0,5,6,10),
+                                labels = c("low","mid","high"))
+table(wines$quality.group)
+table(wines$quality)
+```
+
+See if there are any patterns visible now in higher sugar group:
+```{r}
+ggplot(wines, aes(residual.sugar, fixed.acidity)) +
+  geom_point(aes(color=quality.group)) +
+  xlim (4,20)
+```
+Doesn't look like it!  Oh well. 
+
+What fraction of wines are in each quality bucket at different levels of residual sugar?
+```{r}
+# create decile buckets of residual sugar:
+wines$rs.bucket <- cut(wines$residual.sugar,
+                       breaks=quantile(wines$residual.sugar, 
+                                       probs = seq(0,1, by=0.1)), labels=c(1:10))
+q_group_by_rs <- wines %>% 
+  filter(!is.na(rs.bucket)) %>%
+  group_by(rs.bucket, quality.group) %>%
+  summarise(count=n())
+# need total for each rs bucket also
+rs_bucket_ct <- wines %>% 
+  filter(!is.na(rs.bucket)) %>%
+  group_by(rs.bucket) %>%
+  summarise(total.ct=n())
+
+q_group_by_rs <- inner_join(q_group_by_rs,
+                            rs_bucket_ct,
+                            by="rs.bucket")
+
+ggplot(q_group_by_rs, aes(x=as.integer(rs.bucket),
+                          y=count/total.ct)) +
+  geom_line(aes(color=quality.group)) +
+  xlab("Residual Sugar Group") + 
+  ylab("Fraction of Wines") +
+  scale_x_continuous(breaks=seq(0,10,1))
+```
+For quality rating it does look like there is a "sweet spot" for residual sugar in the middle range.  What is that residual sugar level? Another(easier) way to do this is probably to just summarise by mean quality rating at each RS group and plot that (?bar chart)
+
+```{r}
+q_mean_by_rs <- wines %>% 
+  filter(!is.na(rs.bucket)) %>%
+  group_by(rs.bucket) %>%
+  summarise(q_mean = mean(quality))
+
+ggplot(q_mean_by_rs, aes(x=rs.bucket, y=q_mean)) +
+  geom_bar(stat="identity", aes(fill=I("Blue")))
+```
+So it's possible to see the difference but it doesn't look as significant, since there are so many wines rated as "average", but the fraction of higher and lower rated wines highlights this finding.
+
+```{r}
+# create decile buckets of fixed acidity:
+wines$fa.bucket <- cut(wines$fixed.acidity,
+                       breaks=quantile(wines$fixed.acidity, 
+                                       probs = seq(0,1, by=0.1)), labels=c(1:10))
+q_group_by_fa <- wines %>% 
+  filter(!is.na(fa.bucket)) %>%
+  group_by(fa.bucket, quality.group) %>%
+  summarise(count=n())
+# need total for each rs bucket also
+fa_bucket_ct <- wines %>% 
+  filter(!is.na(fa.bucket)) %>%
+  group_by(fa.bucket) %>%
+  summarise(total.ct=n())
+
+q_group_by_fa <- inner_join(q_group_by_fa,
+                            fa_bucket_ct,
+                            by="fa.bucket")
+
+ggplot(q_group_by_fa, aes(x=as.integer(fa.bucket),
+                          y=count/total.ct)) +
+  geom_line(aes(color=quality.group)) +
+  xlab("Fixed Acidity Group") + 
+  ylab("Fraction of Wines") +
+  scale_x_continuous(breaks=seq(0,10,1))
+```
+Unlike residual sugar this doesn't show a sweet spot for higher quality.  However, the highest leveles of FA definitely have more lower quality wines.  Thus far it looks like wines with residual sugar between 4-5 are more likely to be rated higher quality, and in the highest decile of fixed acidity are much more likely to be rated lower on the quality scale.
+
+
+Now quality and alcohol:
+```{r}
+ggplot(wines, aes(alcohol, fill = quality.group)) +
+  geom_histogram()
+```
+This does make it appear that more of the higher quality rated wines have a higher alcohol level. How about a box plot?
+
+```{r}
+ggplot(wines, aes(x=quality.group, y = alcohol)) +
+  geom_boxplot()
+
+```
+Probably shows this relationship better than any other plot.
+
+Density vs residual sugar: one would expect specific gravity ("density") to increase with sugar level.
+```{r}
+ggplot(wines, aes(residual.sugar, density)) +
+  geom_point() + xlim(0,20) + 
+  ylim (0.985, 1.005) +
+  geom_smooth()
+```
+This looks like a linear relationship except at lower end, with a lot of dispersion.  Alcohol should also influence specific gravity, with a negative correlation?
+
+Density vs alcohol
+```{r}
+ggplot(wines, aes(alcohol, density)) +
+  geom_point() + 
+  ylim (.985, 1.005) + geom_smooth()
+```
+Similarly, looks pretty close to linear with a fair amount of dispersion.  
+
+
+
+# Bivariate Analysis
+
+# What might be best predictors of overall quality rating?
+
+
+# Multivariate Plots Section
+```{r}
+ggplot(wines,aes(residual.sugar, alcohol)) + 
+  xlim (0,20) +
+  geom_point(aes(color=quality.group))
+```
+This does show a tendency for higher rated wines to group at higher alcohol, and not so many at the higher levels of residual sugar
+
+
+
+```{r echo=FALSE, Multivariate_Plots}
+ggplot(wines[wines$quality.group=="high",],
+       aes(x=residual.sugar, y=alcohol)) +
+  geom_point(aes(color=citric.acid)) +
+  xlim(quantile(wines$residual.sugar, 0.01),
+       quantile(wines$residual.sugar, 0.99))
+```
+Model density on alcohol and residual sugar
+
+```{r}
+m1 <- lm(specific.gravity ~ alcohol + residual.sugar, data=wines)
+m1
+```
+
+What accounts for remaining variance in specific gravity?  Add residuals to wines table and plot against fixed acidity.
+
+```{r}
+wines$density.res <- resid(m1)
+ggplot(wines, aes(x=fixed.acidity, y=density.res)) +
+  geom_point() + ylim(0, 0.005)
+cor.test(wines$fixed.acidity, wines$density.res)
+```
+
+```{r}
+ggplot(wines, aes(x=quality.group, y=density.res)) +
+  geom_boxplot() + ylim (0,0.01)
+```
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
+
+### Were there any interesting or surprising interactions between features?
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the strengths and limitations of your model.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, Plot_One}
+
+```
+
+### Description One
+
+
+### Plot Two
+```{r echo=FALSE, Plot_Two}
+
+```
+
+### Description Two
+
+
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+
+```
+
+### Description Three
+
+------
+
+# Reflection

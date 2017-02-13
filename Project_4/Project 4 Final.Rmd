@@ -1,0 +1,693 @@
+#Vinho Verde Wines:  
+
+###Physiochemical Attributes and Quality Ratings  
+ 
+By: Robert Whitson, M.D.
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+
+```{r load_packages}
+# Load all of the packages that you end up using
+# in your analysis in this code chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk.
+# This prevents the code from displaying in the knitted HTML output.
+# You should set echo=FALSE for all code chunks in your file.
+
+setwd("~/Udacity/Udacity Nanodegree/Project 4")
+library(ggplot2)
+library(GGally)
+library (gridExtra)
+library(tidyr)
+library(dplyr)
+library(memisc)
+library(scales)
+library(corrplot)
+```
+
+```{r Load_the_Data}
+# Load the Data
+wines<-read.csv("wineQualityWhites.csv")
+```
+
+# Description of the dataset:
+According to the documentation provided, this dataset contains objectively measured physical and chemical properties of Portugese Vinho Verde white wines, along with an overall quality rating of each wine.  The quality rating is the "median of at least 3 evaluations made by wine experts" on a scale of 0 ("very bad") to 10 ("very excellent").  A few observations about this dataset description:
+
+1.  There isn't any detail about how the wines were selected for inclusion.  Obviously, selection factors could be important in understanding the data.
+2.  The wines analyzed, the Portugese wine style called "Vinho Verde", include a wide range of wine types.  The term "Vinho Verde" translates literally as "green wine".  It refers to a wine which is made for consumption shortly after fermentation is complete, without any further aging.  Most of these wines are mildly sparkling, but they can also be still.  They can range from very dry to moderately sweet.  Also, many different grape varieties are used for making Vinho Verde.  Given this variability in style and grape varietal, finding consistent predictors of "overall quality" may be difficult.
+3.  There is no detail regarding how the "overall quality" scale was used.  Is this a judgment based on this style of wine only, or related to some larger Platonic ideal of wine quality?  It could be helpful to have information on reproducibility of ratings, and median and SD of the scale used on a larger or different population of wines.
+
+### On to looking at the dataset:
+
+Look first at a bar chart of the distribution of the overall quality ratings.  Bar chart seems more appropriate than histogram since only 6 quality levels actually occur in the dataset.  Show structure of data frame and first 10 rows. Use complete.cases to see rows have missing data.
+
+
+
+# Univariate Plots Section
+
+```{r Overall_Quality_Ratings}
+
+ggplot(data = wines, aes(x = quality)) +
+  geom_bar()
+
+cat("Total Rows:",nrow(wines))
+cat("Complete Rows:",length(complete.cases(wines)))
+```
+
+From this plot, the distribution of overall quality ratings looks normal-ish, but is not quite symmetric.  Of note, no wines were rated < 3, and only 5 over 8.  The mode of 6 is just above the midpoint of the scale.
+
+One note about the attribute names: the term "sulphates" probably refers to "sulfites" according to typical US wine vocabulary.  Will change that column name for my peace of mind (and it's easier to type). 
+
+```{r Change_Column_Name}
+colnames(wines)[11] <- "sulfites"
+str(wines)
+
+```
+
+Next look at residual sugar ("RS"), as this would be one major determinant of the style of the wine.  This plot has been smoothed using a round() function, and the top 1% of residual sugar levels eliminated.  A count of the number of wines with RS over 20 is printed out.
+
+```{r Residual_Sugar_Plot}
+# Plot histogram of residual sugar, 
+# round to nearest 0.5 gm to smooth,
+# eliminate top 1% from plot.
+ggplot(data=wines, aes(x = round(residual.sugar / 0.5) * 0.5)) +
+  geom_histogram(binwidth = 0.5) + 
+  scale_x_continuous(limits=c(0, quantile(wines$residual.sugar, probs=0.99)),
+                     breaks=seq(0,20,1)) +
+  xlab("Residual Sugar (gm/L)") + ylab("Number of Wines") +
+  ggtitle("Residual Sugar Distribution")
+cat("Number of wines with residual sugar over 20:",
+    nrow(wines[wines$residual.sugar>20,]))
+
+```
+
+After smoothing and limiting as above, distribution shows: peak at 1.5 gm/L, long-tailed.  Suggestion of secondary peak around 6 and again around 12. Examine distribution with scale transformations:
+
+```{r Residual_Sugar_Transform}
+p1 <- ggplot(wines, aes(x=residual.sugar)) +
+  geom_histogram(bins=50) +
+  scale_x_log10() + 
+  ggtitle("Log 10 Transformation")
+p2 <- ggplot(wines, aes(x=residual.sugar)) +
+  geom_histogram(bins = 50) +
+  scale_x_sqrt() +
+  ggtitle ("Square Root Transformation") 
+
+grid.arrange(p1, p2, ncol=1) 
+
+
+```
+
+Both transforms yield a secondary peak of sweeter wines, somewhat clearer in the log scale transformation.  One article I found states that perceived sweetness is a power function of sugar concentration, so seeing a peak in the log transform makes sense. 
+
+Next look at alcohol level, as this could also be a significant determinant of the type of wine and distribution could be interesting.
+
+```{r Alcohol_Level_Distribution}
+ggplot(wines, aes(x=round(alcohol / 0.5) * 0.5)) +
+  geom_histogram(binwidth = 0.5) + xlab ("Alcohol Volume Percent") +
+  ylab ("Number of Wines") + ggtitle("Alcohol Percent Distribution") +
+  scale_x_continuous(limits=c(8,14), breaks=seq(8,14,0.5))
+```
+
+My initial plot without smoothing suggested a secondary peak but this one does not.  Mode is 9.5, with a long tail, apparently linearly sloping to the right.  This is quite a wide range of alcohol levels.  
+
+Try transforms as above to see what shape looks like
+```{r Alcohol_Level_Transforms}
+p1 <- ggplot(wines, aes(x=alcohol)) +
+  geom_histogram(bins=50) +
+  scale_x_log10() + 
+  ggtitle("Log 10 Transformation")
+p2 <- ggplot(wines, aes(x=alcohol)) +
+  geom_histogram(bins = 50) +
+  scale_x_sqrt() +
+  ggtitle ("Square Root Transformation") 
+
+grid.arrange(p1, p2, ncol=1) 
+
+
+```
+
+Which spreads things out but I'm not sure it helps understand it better.
+
+Now look at plots of the other physiochemical attributes to see basic shape of distributions:
+
+```{r Other_Objective_Attributes}
+# Set up some vectors of column names which will be
+# useful here and later.
+
+# vector of all attribute names:
+# (just remove the integer index column 'X')
+all_attribs <- setdiff(names(wines), "X")
+
+# vector of the attributes I've examined so far, which I
+# think are the 'primary' ones:
+prim_attribs <- c(
+  "quality", "alcohol", "residual.sugar")
+# the rest are the 'miscellaneous attributes'
+misc_attribs <- setdiff(all_attribs, prim_attribs)
+
+l_plots <- list()
+i <- 1
+
+for (attrib in misc_attribs){
+  l_plots[[i]] <- ggplot(
+    wines, 
+    aes_string(x = attrib)) +
+    geom_histogram()
+    xlim(quantile(wines[,attrib], 0.01),
+         quantile(wines[,attrib], 0.99))
+  i <- i + 1
+}
+do.call("grid.arrange", c(l_plots, ncol=3))
+
+```
+
+I get the impression looking at these that most are "normal-ish", with some apparent asymmetry in density, volatile acidity, and sulfites.  
+
+Look at plot of scale transformation for volatile acidity:
+
+```{r Volatile_Acidity_Transform}
+p1 <- ggplot(wines, aes(x=volatile.acidity)) +
+  geom_histogram(bins=50) +
+  xlim(quantile(wines$volatile.acidity, 0.01),
+       quantile(wines$volatile.acidity, 0.99)) +
+  ggtitle("Linear Scale")
+p2 <- ggplot (wines, aes(x=volatile.acidity)) +
+  geom_histogram(bins=50) +
+  xlim(quantile(wines$volatile.acidity, 0.01),
+       quantile(wines$volatile.acidity, 0.99))+
+  scale_x_log10() + 
+  ggtitle("Log10 Transform")
+
+grid.arrange(p1,p2,ncol=1)
+```
+
+And sulfites:
+
+```{r Sulfites_Transform}
+p1 <- ggplot(wines, aes(x=sulfites)) +
+  geom_histogram(bins=50) +
+  xlim(quantile(wines$sulfites, 0.01),
+       quantile(wines$sulfites, 0.99)) +
+  ggtitle("Linear Scale")
+p2 <- ggplot (wines, aes(x=sulfites)) +
+  geom_histogram(bins=50) +
+  xlim(quantile(wines$sulfites, 0.01),
+       quantile(wines$sulfites, 0.99))+
+  scale_x_log10() + 
+  ggtitle("Log10 Transform")
+
+grid.arrange(p1,p2,ncol=1)
+```
+
+Clearly both look more normal when a log transform is applied.  Probably should step through all miscellaneous attributes and look at them in this type of comparison.  The code for this is commented out in the final markdown file, as it generates a lot of plots.
+
+
+```{r All_Attribs_Linear_Vs_Transform}
+# for (attrib in misc_attribs){
+#   p_lin <- ggplot(
+#     wines,
+#     aes_string(x = attrib)) +
+#     geom_histogram() +
+#     xlim(quantile(wines[ ,attrib], 0.01),
+#          quantile(wines[ ,attrib], 0.99)) +
+#     ggtitle("Linear Scale")
+#   p_trans <- ggplot(
+#     wines,
+#     aes_string(x=attrib)) +
+#     geom_histogram() +
+#     scale_x_log10() +
+#     ggtitle("Log10 Transform") # also examined with log10
+#   grid.arrange (p_lin, p_trans , ncol=1)
+#   x <- readline("Hit enter to see next plot")
+# }
+
+```
+
+After reviewing all of this, with both log10 and square root transforms, it looks like:
+Of all the "miscellaneous" attributes, sulfites and volatile acidity are the ones whose frequency distribution looks "more normal" when a log10 or square root transformation is applied. To my eye the others don't have a clear change towards a symmetric, bell-shaped form with the transform applied.
+
+
+# Univariate Analysis
+The dataset consists of a set of eleven physical and chemical measurements on almost 5,000 individual Portugese white wines of the "Vinho Verde" type, along with a rating of overall quality by wine experts. There were no rows with missing data.   
+
+The main feature of interest in this dataset is the overall quality rating.  Plotting the frequency distribution of this variable shows a mildly asymmetric distribution with a mode one level above the mid-point of the scale.  Interestingly, there were no wines rated at the lowest quality ratings (0,1,2), and very few at the high end as well (5 at 9, 0 at 10).
+
+Any of the physiochemical measures could be related to the overall quality rating.  In the univariate analysis I looked specifically at the frequency distribuiton of residual sugar ("RS") and alcohol level as these are two measures important in defining the style of the wine.  
+
+Residual sugar showed a prominent peak at a fairly dry level (RS~3.5) but a very long tail towards the higher end.  This finding is definitely consistent with these wines being made in quite different styles.  When a log10 transformation is applied, there appear to be 2 distinct peaks in the residual sugar distribution.  
+
+Alcohol level showed a peak at a fairly low level (9.5%) with a gradual decline up to 13.5%.  The level of 9.5% would be considered a light wine, and the higher range in this dataset, 11.5-13.5%, is only a moderate level by US standards.
+
+Inspection of histograms of the other physiochemical measures showed a normal-appearing shape for most, but not all, of these attributes. Sulfites and volatile acidity seemed to move towards a normal appearnce with a log10 transformation.  The shape of the density distribution is asymmetric, in a manner consistent with the alcohol distribution.
+
+#Bivariate Plots Section
+
+As a first step, use ggpairs to to look at rough scatterplots and correlation coefficients among all variables.
+```{r GG_pairs_plots}
+
+# sample 1000 rows, examine all attributes for correlation
+
+ggpairs(wines[sample.int(nrow(wines), 1000), all_attribs],
+        axisLabels="internal")
+
+```
+
+Impressions: For quality, the only moderate correlation per Pearson's r is positive with alcohol.  Weak (negative) with density - could be d/t alcohol, (negative) chlorides - salty wines not good, (negative) with volatile acid - vinegary wines not good.  Scatterplots show strong correlation density with (+) sugar and (-) alcohol - as expected from basic chemistry, moderate with total sulfur dioxide (?look this up).  pH correlated with fixed acidity (also basic chemistry).  Might be interesting to look at density modeled on sugar and alcohol and see how much residual there is, then add sulfur dioxide.  So for a linear model, only alcohol seems like it might be a predictor for quality rating.
+
+Another way to visualize the correlations, which is a bit easier to understand visually:
+
+```{r Coorplot_All_Attribs }
+M <- cor(wines[ ,all_attribs])
+corrplot(M, method="circle")
+
+```
+
+Which shows the correlations noted above.
+
+Looking at quality level and alcohol, as these seem to be correlated.  First a scatterplot
+```{r Quality_Alcohol_Scatter}
+ggplot(wines, aes(x=alcohol, y=quality)) +
+  geom_point(alpha=0.3) + geom_jitter()
+```
+
+This appears to show some correlation but it's pretty rough.  Boxplot of alcohol against quality will show median at each level.
+```{r Alcohol_Quality_Boxplot}
+ggplot(wines, aes(x=as.factor(quality), y=alcohol)) +
+  geom_boxplot(outlier.color=NA)
+```
+
+This shows that higher quality wines definitely do tend to have higher alcohol levels.  Adding geom_jitter gives an indication of the number of wines in each quality group:
+
+```{r Quality_Alcohol_Geom_Jitter}
+ggplot(wines, aes(x=as.factor(quality), y=alcohol)) +
+  geom_jitter(alpha=0.7) +
+  geom_boxplot(outlier.color=NA, alpha=0.7, color="blue") 
+
+```
+
+This highlights how few wines there are at the extremes of quality rating.  It also shows what may be a group of higher quality wines (rating 8) with quite low alcohol levels.  
+
+Quality and residual sugar: boxplot residual sugar against quality
+```{r RS_vs_quality}
+ggplot(wines [wines$residual.sugar < quantile(wines$residual.sugar, 0.99),],
+       aes(x=as.factor(quality), 
+                  y= residual.sugar)) +
+    geom_boxplot(outlier.color=NA) 
+```
+
+That doesn't show much.  How about showing the fraction of wines rated more highly at different levels of residual sugar?  Make decile buckets of residual sugar, and group quality ratings into low (<6), mid (=6), and high (>6) bins. 
+
+```{r RS_Qual_Group_Plot}
+# Break wines into 3 groups by quality rating
+wines$quality.group <- cut(wines$quality,
+                                breaks = c(0,5,6,10),
+                                labels = c("low","mid","high"))
+
+# create decile buckets of residual sugar:
+wines$rs.bucket <- cut(wines$residual.sugar,
+                       breaks=quantile(wines$residual.sugar, 
+                                       probs = seq(0,1, by=0.1)), labels=c(1:10))
+
+# This gets number of wines in each combination
+# of RS and quality group
+q_group_by_rs <- wines %>% 
+  filter(!is.na(rs.bucket)) %>%
+  group_by(rs.bucket, quality.group) %>%
+  summarise(count=n())
+# need total for each rs bucket to calculate fraction
+rs_bucket_ct <- wines %>% 
+  filter(!is.na(rs.bucket)) %>%
+  group_by(rs.bucket) %>%
+  summarise(total.ct=n())
+# join together 
+q_group_by_rs <- inner_join(q_group_by_rs,
+                            rs_bucket_ct,
+                            by="rs.bucket")
+# and make the plot
+ggplot(q_group_by_rs, aes(x=as.integer(rs.bucket),
+                          y=count/total.ct)) +
+  geom_line(aes(color=quality.group)) +
+  scale_x_continuous(breaks=seq(1,10,1)) 
+
+# and show the number of wines in each quality bin
+cat("Number of wines in each quality group: \n",
+    table(wines$quality.group))
+# table(wines$quality)
+
+```
+
+So there does seem to be a "sweet spot" in the middle range of residual sugar where a wine is much more likely to be rated of higher quality.
+
+A simpler way to show this might just be mean quality rating by residual sugar bucket.
+```{r Mean_Quality_by_RS_bucket}
+
+ggplot(wines[!is.na(wines$rs.bucket),], aes(x=rs.bucket, y=quality)) +
+  geom_bar(stat="summary", fun.y="mean")
+```
+
+Which actually doesn't show this finding as well.  There are so many wines in the middle group, that the difference in mean quality is quite small.
+
+The line graph can be drawn with a color brewer palette so the low to high quality groups lie more along a continuum:
+
+```{r Alt_RS_Qaul_Group_Plot}
+
+ggplot(q_group_by_rs, aes(x=as.integer(rs.bucket),
+                          y=count/total.ct)) +
+  geom_line(aes(color=quality.group)) +
+  scale_x_continuous(breaks=seq(1,10,1)) +
+  scale_color_brewer(palette="YlOrRd") +
+  theme_dark()
+```
+
+
+
+```{r Alt_Quality_Buckets}
+# Create alternate quality bins with the large
+# majority of wines in the middle, just the 
+# really low (3-4) and high (8-9) wines in the outer
+# groups
+wines$alt.qual.group <- cut(wines$quality,
+                                breaks = c(0,4,7,10),
+                                labels = c("low","mid","high"))
+
+# table (wines$alt.qual.group)
+```
+
+Any correlation of alcohol with residual sugar?
+```{r Alcohol_vs_residual_sugar}
+ggplot(wines, aes(x=residual.sugar, y=alcohol)) +
+  geom_point() + 
+  xlim(quantile(wines$residual.sugar, 0.01),
+       quantile(wines$residual.sugar, 0.99)) +
+  geom_smooth()
+```
+
+After group of dry wines at lowest RS, alcohol is negatively correlated with increasing residual sugar.
+
+And using boxplot to see means by residual sugar bucket
+```{r Alcohol_RSbucket_boxplot}
+ggplot(wines, aes(x=rs.bucket, y=alcohol)) +
+  geom_boxplot()
+```
+
+Both of these show the same thing: alcohol levels similar for drier wines, but tend to decline as the residual sugar increases.  The really sweet wines tend not to be as strong, although there are a few outliers.
+
+With the quality groups could look to see if distribution of other variables differs by quality bucket.  
+
+```{r Other_Vars_Distrib_by_Quality}
+l_plots <- list()
+i <- 1
+# The vector misc_attribs was created above and can be
+# reused here.
+for (attrib in misc_attribs){
+  l_plots[[i]] <- ggplot(data=wines,
+      aes_string(x=attrib)) +
+    geom_histogram() +
+    xlim(quantile(wines[,attrib], 0.01),
+         quantile(wines[,attrib], 0.99)) +
+    facet_wrap(~quality.group)
+  i <- i+1
+}
+# I used commented out code to see larger view of
+# each plot.  This shows them all in one using
+# grid.arrange:
+
+do.call("grid.arrange", c(l_plots, ncol=3))
+
+#for (i in c(1:length(l_plots))){
+#  x <- readline("Hit enter to see next plot")
+#  print(l_plots[[i]])
+#}
+```
+
+Which to me doesn't show marked difference in the shapes of the distributions.  I also examined these distributions looking at different quality bins, with only the lowest (n=183) and highest (n=180) winest in the respective groups.  
+
+One can also look at bar charts of means to see to see if there are pattenrs of differences according to quality.
+
+```{r Other_vars_Boxplots}
+
+l_plots <- list()
+i <- 1
+for (attrib in misc_attribs) {
+  l_plots[[i]] <- ggplot(data=wines,
+      aes_string(y=attrib)) +
+    geom_bar(stat="summary", 
+             aes(x=as.factor(quality)),
+             fun.y="mean") 
+    
+  i <- i+1
+}
+# same thing here: this allows looking at each plot
+# by itself at larger scale.  grid.arrange better
+# for html output!
+#for (i in c(1:length(l_plots))){
+#  x <- readline("Hit enter to see next plot")
+#  print(l_plots[[i]])
+#}
+do.call("grid.arrange", c(l_plots, ncol=3))
+
+```
+
+The only variable which looks, to my eye, like there is a consistent pattern is chlorides.  A boxplot can show the range of variability and help determine if this could really be a discriminant between the lowest and highest quality wines.
+
+```{r Chlorides_Quality}
+ggplot(wines, aes(x=as.factor(quality),
+                  y=chlorides)) +
+  geom_boxplot(outlier.shape=NA) +
+  ylim(0.0, 0.1)
+```
+
+It appears from this that there is enough overlap that this wouldn't be that useful as a discriminant feature for quality.
+
+# Bivariate Analysis
+There is an interesting relationship between quality rating and both alcohol and residual sugar.  For alcohol, it looks like the higher quality wines definitely have a higher median alcohol level, but there's a trend towards higher alcohol in the lower quality wines as well.  For residual sugar, there is definitely a level in the midrange where wines are more likely to be rated higher, with the quality level falling off on the extremes of residual sugar, especially at the higher end.
+
+Examining the other variables against quality using histograms and bar charts didn't show any clear strong correlations.
+
+There is also a relationship between alcohol level and residual sugar, with alcohol being lower in the sweetest wines.  
+
+The preliminary scatterplots showed a relationship between density and both residual sugar and alcohol, but this is just basic chemistry so I didn't explore this further in this section.
+
+# Multivariate Plots Section
+
+Examine the relationship between quality, alcohol level, and residual sugar.  First a scatterplot of alcohol against residual sugar, color by quality group:
+
+```{r Alcohol_RS_Quality}
+# Scatterplot of alcohol and residual sugar,
+# color by quality.
+ggplot(wines, aes(x=residual.sugar, y=alcohol)) +
+  geom_point(aes(color=quality.group)) +
+  xlim(quantile(wines$residual.sugar, 0.01),
+       quantile(wines$residual.sugar, 0.99)) + 
+  scale_color_brewer(palette="YlOrRd")
+```
+
+The pattern of higher quality ratings for higher-alcohol wines (at all levels of residual sugar) is evident, but not much else.  
+
+Try by rs.bucket:  
+
+```{r Alcohol_RSBucket_Quality}
+ggplot(wines, aes(x=rs.bucket, y=alcohol)) +
+  geom_boxplot(aes(color=quality.group))
+
+```
+
+Now that's really interesting.  Kind of busy, but there's a clear difference in alcohol levels between the higher and lower quality groups, and this difference is the greatest in the middle ranges of residual sugar.  In the sweetest wines, however, there's not much difference. Maybe we could do a line chart
+
+```{r Alcohol_RS_Quality_Line}
+ggplot(wines, aes(x=(as.integer(rs.bucket)),
+                  y=alcohol)) +
+  geom_line(stat="summary", fun.y="mean", 
+            aes(color = quality.group)) 
+```
+
+That shows the relationship clearly.  Another way to color the lines, in which they show a gradient along the quality scale would be:
+
+```{r Alc_RS_Quality_Color_Brewer}
+ggplot(wines, aes(x=(as.integer(rs.bucket)),
+                  y=alcohol)) +
+  geom_line(stat="summary", fun.y="mean", 
+            aes(color = quality.group)) +
+  scale_color_brewer(palette="YlOrRd") +
+  theme_dark()
+
+```
+
+Try making decile bins for alcohol also, grouping by this and RS bins and doing geom_tile(), color by quality mean.
+
+```{r Alc_RS_Quality_Tile}
+wines$alc.bucket <- cut(
+  wines$alcohol, 
+  breaks=quantile(
+    wines$alcohol, 
+    probs = seq(0,1, by=0.1)), 
+  labels=c(1:10))
+q_by_alc_rs_b <-
+  wines %>% filter(!is.na(rs.bucket) & !is.na(alc.bucket)) %>%
+  group_by(alc.bucket, rs.bucket) %>%
+  summarise(count = n(),
+            q_mean = mean(quality))
+# make the plot
+ggplot(q_by_alc_rs_b, aes(x=rs.bucket, 
+                          y=alc.bucket,
+                          fill=q_mean)) +
+  geom_tile() +
+  scale_fill_gradient(low="blue", 
+                      high="red",
+                      na.value="white")
+```
+
+Definitely high-alcohol, mid-sugar wines have the highest quality, but perhaps an island of higher quality at the low alcohol/high sugar end also.
+
+We can also look at number of wines in each cell with
+
+```{r Number_Wines_by_Alc_RS}
+ggplot(q_by_alc_rs_b, aes(x=rs.bucket, 
+                          y=alc.bucket,
+                          fill=count)) +
+  geom_tile() +
+  scale_fill_gradient(low="lightgrey", 
+                      high="steelblue",
+                      na.value="black")
+
+```
+
+Showing that the largest number of wines are made with either mid-RS+high alcohol, or high-RS+low alcohol. Could split the dataframe and plot separately the lowest and highest quality wines.
+
+```{r Low_mid_high_Q_By_Alc_RS}
+df_low <- wines[wines$alt.qual.group == "low",]
+df_high <- wines[wines$alt.qual.group == "high",]
+q_count_low <- df_low %>% 
+    filter(!is.na(rs.bucket) & 
+                  !is.na(alc.bucket)) %>%
+  group_by(alc.bucket, rs.bucket) %>%
+  summarise(count = n())
+  plot_low <- ggplot(q_count_low, aes(x=rs.bucket, 
+                          y=alc.bucket,
+                          fill=count)) +
+  geom_tile() +
+  scale_fill_gradient(low="lightgrey", 
+                      high="steelblue",
+                      na.value="black") +
+    ggtitle("Lowest Quality Wines")
+q_count_high <- df_high %>% 
+    filter(!is.na(rs.bucket) & 
+                  !is.na(alc.bucket)) %>%
+  group_by(alc.bucket, rs.bucket) %>%
+  summarise(count = n())
+  plot_high <- ggplot(q_count_high, aes(x=rs.bucket, 
+                          y=alc.bucket,
+                          fill=count)) +
+  geom_tile() +
+  scale_fill_gradient(low="lightgrey", 
+                      high="steelblue",
+                      na.value="black") +
+    ggtitle("Highest Quality Wines")
+
+grid.arrange(plot_low, plot_high, ncol=1)
+
+```
+
+It appears from this that the lowest quality wines are all over the place, though none which are sweet and high in alcohol.  The highest quality clearly are in the mid-sugar/high-alcohol region, with a significant number in that lower right-hand corner.
+
+
+
+Now examine density, alcohol, and sugar levels:
+
+```{r Alc_Density_RS}
+ggplot(wines, aes(x=residual.sugar,
+                  y=density)) +
+  geom_point(aes(color=alcohol)) + 
+  xlim(quantile(wines$residual.sugar, 0.01), 
+         quantile(wines$residual.sugar, 0.99)) +
+  ylim(quantile(wines$density, 0.01),
+       quantile(wines$density,0.99)) +
+  geom_smooth()
+```
+
+Similar plot against alcohol, color by rs or rs.bucket
+```{r Density_Alc_RS }
+ggplot(wines, aes(x=alcohol,
+                  y=density)) +
+  geom_point(aes(color=rs.bucket)) + 
+  xlim(quantile(wines$alcohol, 0.01), 
+         quantile(wines$alcohol, 0.99)) +
+  ylim(quantile(wines$density, 0.01),
+       quantile(wines$density,0.99)) +
+  geom_smooth()
+  
+```
+
+This shows nicely how residual sugar accounts for a lot of the dispersion of density vs alcohol. However there is more to the story as the RS deciles certainly don't line up perfectly.
+
+# Multivariate Analysis
+In the bivariate analysis, I found a relationship between quality and both alcohol and RS.  Looking at alcohol, residual sugar, and quality together shows the link between higher alcohol and quality is strongest in the middle ranges of residual sugar.  Mean quality rating is highest in the mid-sugar/high alcohol region. There may be an area of higher quality also in the lowest alcohol/highest sugar decile.  When grouped by decile of alcohol and RS, the largest number of wines are in the mid-sugar/high alcohol and high-sugar/low alcohol areas.  This is perhaps not surprising, as quality ratings seem higher in these regions so winemakers might target these ranges in an effort to make a better product.
+
+Plotting density against alcohol and residual sugar shows the expected relationships, but there is dispersion not accounted for by RS.
+
+------
+
+# Final Plots and Summary
+
+## Plot One: Quality Ratings Distribution:
+```{r Plot_One}
+ggplot(data = wines, aes(x = quality)) +
+  geom_bar(aes(fill=I("lightblue"),
+               color=I("black")))+
+  ggtitle("Wine Quality Distribution") +
+  ylab("Number of Wines") +
+  xlab("Experts' Quality Rating") +
+  scale_x_continuous(limits=c(0,10),
+                     breaks=seq(0,10,1))
+  
+
+```
+
+The distribution of quality ratings shows no wines rated at the lowest (0,1,2) or highest (10) ends of the scale.  It seems likely that any very poor wines didn't make it to market, or into the pool of wines judged for this dataset.  It's not as clear why there should be no "very excellent" wines, out of almost 5,000 judged.  Perhaps this type of wine, meant to be consumed young with no aging, couldn't achieve a really superior rating by a wine expert.
+
+## Plot Two: Quality and Residual Sugar:
+```{r Plot_Two}
+ggplot(q_group_by_rs, aes(x=as.integer(rs.bucket),
+                          y=count/total.ct)) +
+  geom_line(aes(color=quality.group),
+            size=1) +
+  xlab("Residual Sugar Decile") + 
+  ylab("Fraction of Wines") +
+  ggtitle("Quality Rating and Residual Sugar")+
+  guides(color=guide_legend(title="Quality Level",
+                            reverse=TRUE))+
+  scale_x_continuous(breaks=seq(1,10,1)) +
+  scale_color_brewer(palette="YlOrRd") + 
+  theme_dark()
+```
+
+This plot shows that almost half of wines were rated in the middle range of quality at all deciles of residual sugar.  There is a region, however, in the 4th-5th deciles of residual sugar where wines were much more likely to receive a high quality score.  Further, wines in the higher deciles of residual sugar were very unlikely to receive a high quality rating. At the top decile of RS, the fraction of lower quality wines is even slightly higher than the mid-rated ones.
+
+## Plot Three: Quality, Alcohol, Residual Sugar:
+```{r Plot_Three}
+ggplot(q_by_alc_rs_b, aes(x=rs.bucket, 
+                          y=alc.bucket,
+                          fill=q_mean)) +
+  geom_tile(aes(alpha = count/max(count))) +
+  scale_fill_gradient(low="blue",
+                      high="red",
+                      na.value="white") +
+  ggtitle ("Wine Quality: Alcohol and Residual Sugar")+
+  ylab("Decile of Alcohol Percentage") +
+  xlab("Residual Sugar Decile") +
+  scale_alpha_continuous(guide=FALSE) +
+  guides(fill=guide_legend(title="Mean Quality",
+                           reverse=TRUE)) +
+  theme_classic()
+```
+
+This plot shows the quality rating mean arranged by decile of residual sugar and alcohol.  The intensity of the shading corresponds to the number of wines in each group.  The highest quality area is in the mid-sugar + high-alcohol range.  The high-sugar + low-alcohol region shows a large number of wines of medium quality.
+
+
+# Reflection
+This dataset was challenging in that the major feature of interest, quality rating, showed at best modest correlation with any of the objective input variables.  There were definitely patterns of quality related to two important attributes (alcohol and RS).  However, I was unable to find a combination of measures which could really discriminate higher from lower quality wines.  I did find a few interesting relationships between some of the individual objective measures.  
+The variable nature of the wine styles in the dataset may have contributed to the challenges.  When examining counts of wines by alcohol and residual sugar deciles, there did appear to be separate regions with higher numbers.  Perhaps splitting the dataset into these groups, then analyzing again based on the other objective variables might show additional correlations.  One variable which was not present in the dataset was the degree of carbonation.  Vinho Verde wines are often mildly sparkling, but many are still as well.  The combination of attributes which make an excellent sparkling wine might be different from those in a high-quality still wine.  Also, there may well be more sophisticated analysis approaches which could, in fact, create a model for quality prediction from the variables in this dataset.
